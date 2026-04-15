@@ -13,6 +13,9 @@ class Admin extends AdminModule
         return [
             'Kelola' => 'manage',
             'Mutasi Obat & BHP' => 'mutasi',
+            'Pengajuan Obat' => 'pengajuanobat',
+            'Pemesanan Obat' => 'pemesananobat',
+            'Penerimaan Obat' => 'penerimaanobat',
             'Stok Opname' => 'opname',
             'Darurat Stok' => 'daruratstok',
             'Detail Pemberian Obat' => 'detailpemberianobat',
@@ -25,6 +28,9 @@ class Admin extends AdminModule
     {
       $sub_modules = [
         ['name' => 'Mutasi Obat & BHP', 'url' => url([ADMIN, 'farmasi', 'mutasi']), 'icon' => 'medkit', 'desc' => 'Data obat dan barang habis pakai'],
+        ['name' => 'Pengajuan Obat', 'url' => url([ADMIN, 'farmasi', 'pengajuanobat']), 'icon' => 'file-text', 'desc' => 'Pengajuan kebutuhan obat oleh farmasi'],
+        ['name' => 'Pemesanan Obat', 'url' => url([ADMIN, 'farmasi', 'pemesananobat']), 'icon' => 'shopping-cart', 'desc' => 'Pemesanan obat berdasarkan pengajuan yang disetujui'],
+        ['name' => 'Penerimaan Obat', 'url' => url([ADMIN, 'farmasi', 'penerimaanobat']), 'icon' => 'archive', 'desc' => 'Penerimaan obat cash / tempo dari pemesanan'],
         ['name' => 'Stok Opname', 'url' => url([ADMIN, 'farmasi', 'opname']), 'icon' => 'medkit', 'desc' => 'Tambah stok opname'],
         ['name' => 'Darurat Stok', 'url' => url([ADMIN, 'farmasi', 'daruratstok']), 'icon' => 'warning', 'desc' => 'Monitoring stok darurat obat dan BHP'],
         ['name' => 'Detail Pemberian Obat', 'url' => url([ADMIN, 'farmasi', 'detailpemberianobat']), 'icon' => 'medkit', 'desc' => 'Detail pemberian obat pasien'],
@@ -843,6 +849,263 @@ class Admin extends AdminModule
         exit();
     }
     /* End Darurat Stok Section */
+
+    /* Pengadaan Obat Section */
+    public function getPengajuanObat()
+    {
+        $this->_addHeaderFiles();
+        $this->_ensurePengadaanTables();
+
+        $rows = $this->db()->pdo()->query("
+            SELECT po.*, db.nama_brng
+            FROM farmasi_pengajuan_obat po
+            LEFT JOIN databarang db ON db.kode_brng = po.kode_brng
+            ORDER BY po.id DESC
+        ")->fetchAll(\PDO::FETCH_ASSOC);
+
+        return $this->draw('pengajuanobat.html', [
+            'title' => 'Pengajuan Kebutuhan Obat',
+            'items' => htmlspecialchars_array($this->db('databarang')->where('status', '1')->toArray()),
+            'list' => htmlspecialchars_array($rows),
+        ]);
+    }
+
+    public function postSavePengajuanObat()
+    {
+        $this->_ensurePengadaanTables();
+        if (checkEmptyFields(['tanggal_pengajuan', 'kode_brng', 'jumlah'], $_POST)) {
+            $this->notify('failure', 'Isian pengajuan wajib diisi.');
+            redirect(url([ADMIN, 'farmasi', 'pengajuanobat']));
+        }
+
+        $payload = [
+            'tanggal_pengajuan' => $_POST['tanggal_pengajuan'],
+            'kode_brng' => $_POST['kode_brng'],
+            'jumlah' => (int) $_POST['jumlah'],
+            'status' => $_POST['status'] ?? 'Menunggu',
+            'catatan' => $_POST['catatan'] ?? '',
+            'dibuat_oleh' => $this->core->getUserInfo('fullname', null, true),
+            'created_at' => date('Y-m-d H:i:s'),
+        ];
+
+        $query = $this->db('farmasi_pengajuan_obat')->save($payload);
+        $this->notify($query ? 'success' : 'failure', $query ? 'Pengajuan obat berhasil disimpan.' : 'Pengajuan obat gagal disimpan.');
+        redirect(url([ADMIN, 'farmasi', 'pengajuanobat']));
+    }
+
+    public function getPemesananObat()
+    {
+        $this->_addHeaderFiles();
+        $this->_ensurePengadaanTables();
+
+        $pengajuan = $this->db()->pdo()->query("
+            SELECT po.id, po.tanggal_pengajuan, po.kode_brng, po.jumlah, po.status, db.nama_brng
+            FROM farmasi_pengajuan_obat po
+            LEFT JOIN databarang db ON db.kode_brng = po.kode_brng
+            WHERE po.status = 'Disetujui'
+            ORDER BY po.id DESC
+        ")->fetchAll(\PDO::FETCH_ASSOC);
+
+        $rows = $this->db()->pdo()->query("
+            SELECT pmo.*, po.kode_brng, po.jumlah AS jumlah_pengajuan, db.nama_brng
+            FROM farmasi_pemesanan_obat pmo
+            LEFT JOIN farmasi_pengajuan_obat po ON po.id = pmo.pengajuan_id
+            LEFT JOIN databarang db ON db.kode_brng = po.kode_brng
+            ORDER BY pmo.id DESC
+        ")->fetchAll(\PDO::FETCH_ASSOC);
+
+        return $this->draw('pemesananobat.html', [
+            'title' => 'Pemesanan Obat',
+            'pengajuan' => htmlspecialchars_array($pengajuan),
+            'list' => htmlspecialchars_array($rows),
+        ]);
+    }
+
+    public function postSavePemesananObat()
+    {
+        $this->_ensurePengadaanTables();
+        if (checkEmptyFields(['pengajuan_id', 'tanggal_pemesanan', 'supplier', 'jumlah_pesan'], $_POST)) {
+            $this->notify('failure', 'Isian pemesanan wajib diisi.');
+            redirect(url([ADMIN, 'farmasi', 'pemesananobat']));
+        }
+
+        $query = $this->db('farmasi_pemesanan_obat')->save([
+            'pengajuan_id' => (int) $_POST['pengajuan_id'],
+            'tanggal_pemesanan' => $_POST['tanggal_pemesanan'],
+            'supplier' => $_POST['supplier'],
+            'jumlah_pesan' => (int) $_POST['jumlah_pesan'],
+            'status_pemesanan' => $_POST['status_pemesanan'] ?? 'Dipesan',
+            'catatan' => $_POST['catatan'] ?? '',
+            'dibuat_oleh' => $this->core->getUserInfo('fullname', null, true),
+            'created_at' => date('Y-m-d H:i:s'),
+        ]);
+
+        $this->notify($query ? 'success' : 'failure', $query ? 'Pemesanan obat berhasil disimpan.' : 'Pemesanan obat gagal disimpan.');
+        redirect(url([ADMIN, 'farmasi', 'pemesananobat']));
+    }
+
+    public function getPenerimaanObat()
+    {
+        $this->_addHeaderFiles();
+        $this->_ensurePengadaanTables();
+
+        $pemesanan = $this->db()->pdo()->query("
+            SELECT pmo.id, pmo.tanggal_pemesanan, pmo.jumlah_pesan, pmo.supplier, po.kode_brng, db.nama_brng
+            FROM farmasi_pemesanan_obat pmo
+            LEFT JOIN farmasi_pengajuan_obat po ON po.id = pmo.pengajuan_id
+            LEFT JOIN databarang db ON db.kode_brng = po.kode_brng
+            WHERE pmo.status_pemesanan IN ('Dipesan', 'Selesai')
+            ORDER BY pmo.id DESC
+        ")->fetchAll(\PDO::FETCH_ASSOC);
+
+        $rows = $this->db()->pdo()->query("
+            SELECT pto.*, pmo.supplier, pmo.jumlah_pesan, po.kode_brng, db.nama_brng
+            FROM farmasi_penerimaan_obat pto
+            LEFT JOIN farmasi_pemesanan_obat pmo ON pmo.id = pto.pemesanan_id
+            LEFT JOIN farmasi_pengajuan_obat po ON po.id = pmo.pengajuan_id
+            LEFT JOIN databarang db ON db.kode_brng = po.kode_brng
+            ORDER BY pto.id DESC
+        ")->fetchAll(\PDO::FETCH_ASSOC);
+
+        return $this->draw('penerimaanobat.html', [
+            'title' => 'Penerimaan Obat',
+            'pemesanan' => htmlspecialchars_array($pemesanan),
+            'list' => htmlspecialchars_array($rows),
+        ]);
+    }
+
+    public function postSavePenerimaanObat()
+    {
+        $this->_ensurePengadaanTables();
+        if (checkEmptyFields(['pemesanan_id', 'tanggal_penerimaan', 'jumlah_terima', 'jenis_pembayaran'], $_POST)) {
+            $this->notify('failure', 'Isian penerimaan wajib diisi.');
+            redirect(url([ADMIN, 'farmasi', 'penerimaanobat']));
+        }
+
+        $pemesanan = $this->db()->pdo()->prepare("
+            SELECT pmo.*, po.kode_brng
+            FROM farmasi_pemesanan_obat pmo
+            LEFT JOIN farmasi_pengajuan_obat po ON po.id = pmo.pengajuan_id
+            WHERE pmo.id = :id
+            LIMIT 1
+        ");
+        $pemesanan->execute([':id' => (int) $_POST['pemesanan_id']]);
+        $pemesanan = $pemesanan->fetch(\PDO::FETCH_ASSOC);
+
+        if (empty($pemesanan)) {
+            $this->notify('failure', 'Data pemesanan tidak ditemukan.');
+            redirect(url([ADMIN, 'farmasi', 'penerimaanobat']));
+        }
+
+        $jatuhTempo = null;
+        if (($_POST['jenis_pembayaran'] ?? 'Cash') === 'Tempo' && !empty($_POST['tanggal_jatuh_tempo'])) {
+            $jatuhTempo = $_POST['tanggal_jatuh_tempo'];
+        }
+
+        $query = $this->db('farmasi_penerimaan_obat')->save([
+            'pemesanan_id' => (int) $_POST['pemesanan_id'],
+            'tanggal_penerimaan' => $_POST['tanggal_penerimaan'],
+            'jumlah_terima' => (int) $_POST['jumlah_terima'],
+            'jenis_pembayaran' => $_POST['jenis_pembayaran'],
+            'tanggal_jatuh_tempo' => $jatuhTempo,
+            'nomor_faktur' => $_POST['nomor_faktur'] ?? '',
+            'catatan' => $_POST['catatan'] ?? '',
+            'dibuat_oleh' => $this->core->getUserInfo('fullname', null, true),
+            'created_at' => date('Y-m-d H:i:s'),
+        ]);
+
+        if ($query) {
+            $this->db('farmasi_pemesanan_obat')
+                ->where('id', (int) $_POST['pemesanan_id'])
+                ->update('status_pemesanan', 'Selesai');
+
+            $gudang = $this->settings->get('farmasi.gudang');
+            $kodeBrng = $pemesanan['kode_brng'] ?? '';
+            if (!empty($gudang) && $gudang !== '-' && !empty($kodeBrng)) {
+                $stokGudang = $this->db('gudangbarang')
+                    ->where('kode_brng', $kodeBrng)
+                    ->where('kd_bangsal', $gudang)
+                    ->oneArray();
+                $stokAwal = (int) ($stokGudang['stok'] ?? 0);
+                $stokAkhir = $stokAwal + (int) $_POST['jumlah_terima'];
+
+                $this->db('riwayat_barang_medis')->save([
+                    'kode_brng' => $kodeBrng,
+                    'stok_awal' => $stokAwal,
+                    'masuk' => (int) $_POST['jumlah_terima'],
+                    'keluar' => 0,
+                    'stok_akhir' => $stokAkhir,
+                    'posisi' => 'Penerimaan',
+                    'tanggal' => date('Y-m-d'),
+                    'jam' => date('H:i:s'),
+                    'petugas' => $this->core->getUserInfo('fullname', null, true),
+                    'kd_bangsal' => $gudang,
+                    'status' => 'Simpan',
+                    'no_batch' => '0',
+                    'no_faktur' => $_POST['nomor_faktur'] ?? '0',
+                    'keterangan' => 'Penerimaan obat dari supplier',
+                ]);
+
+                if ($stokGudang) {
+                    $this->db('gudangbarang')
+                        ->where('kode_brng', $kodeBrng)
+                        ->where('kd_bangsal', $gudang)
+                        ->update('stok', $stokAkhir);
+                } else {
+                    $this->db('gudangbarang')->save([
+                        'kode_brng' => $kodeBrng,
+                        'kd_bangsal' => $gudang,
+                        'stok' => $stokAkhir,
+                        'no_batch' => '0',
+                        'no_faktur' => $_POST['nomor_faktur'] ?? '0',
+                    ]);
+                }
+            }
+        }
+
+        $this->notify($query ? 'success' : 'failure', $query ? 'Penerimaan obat berhasil disimpan.' : 'Penerimaan obat gagal disimpan.');
+        redirect(url([ADMIN, 'farmasi', 'penerimaanobat']));
+    }
+
+    private function _ensurePengadaanTables()
+    {
+        $this->db()->pdo()->exec("CREATE TABLE IF NOT EXISTS `farmasi_pengajuan_obat` (
+          `id` INTEGER PRIMARY KEY AUTO_INCREMENT,
+          `tanggal_pengajuan` date NOT NULL,
+          `kode_brng` varchar(15) NOT NULL,
+          `jumlah` int(11) NOT NULL DEFAULT 0,
+          `status` varchar(20) NOT NULL DEFAULT 'Menunggu',
+          `catatan` text,
+          `dibuat_oleh` varchar(100) DEFAULT '-',
+          `created_at` datetime NOT NULL
+        )");
+        $this->db()->pdo()->exec("CREATE TABLE IF NOT EXISTS `farmasi_pemesanan_obat` (
+          `id` INTEGER PRIMARY KEY AUTO_INCREMENT,
+          `pengajuan_id` int(11) NOT NULL,
+          `tanggal_pemesanan` date NOT NULL,
+          `supplier` varchar(150) NOT NULL,
+          `jumlah_pesan` int(11) NOT NULL DEFAULT 0,
+          `status_pemesanan` varchar(20) NOT NULL DEFAULT 'Draft',
+          `catatan` text,
+          `dibuat_oleh` varchar(100) DEFAULT '-',
+          `created_at` datetime NOT NULL,
+          CONSTRAINT `fk_farmasi_pemesanan_pengajuan` FOREIGN KEY (`pengajuan_id`) REFERENCES `farmasi_pengajuan_obat`(`id`) ON DELETE CASCADE ON UPDATE CASCADE
+        )");
+        $this->db()->pdo()->exec("CREATE TABLE IF NOT EXISTS `farmasi_penerimaan_obat` (
+          `id` INTEGER PRIMARY KEY AUTO_INCREMENT,
+          `pemesanan_id` int(11) NOT NULL,
+          `tanggal_penerimaan` date NOT NULL,
+          `jumlah_terima` int(11) NOT NULL DEFAULT 0,
+          `jenis_pembayaran` varchar(10) NOT NULL DEFAULT 'Cash',
+          `tanggal_jatuh_tempo` date DEFAULT NULL,
+          `nomor_faktur` varchar(100) DEFAULT NULL,
+          `catatan` text,
+          `dibuat_oleh` varchar(100) DEFAULT '-',
+          `created_at` datetime NOT NULL,
+          CONSTRAINT `fk_farmasi_penerimaan_pemesanan` FOREIGN KEY (`pemesanan_id`) REFERENCES `farmasi_pemesanan_obat`(`id`) ON DELETE CASCADE ON UPDATE CASCADE
+        )");
+    }
+    /* End Pengadaan Obat Section */
 
     public function getCSS()
     {
