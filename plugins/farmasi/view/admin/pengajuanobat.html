@@ -1,0 +1,94 @@
+<div class="row">
+  <div class="col-md-12">
+    <div class="panel panel-default">
+      <div class="panel-heading">
+        <h3 class="panel-title">{?=isset_or($title)?}</h3>
+      </div>
+      <div class="panel-body">
+        <form action="{?=url([ADMIN, 'farmasi', 'savepengajuanobat'])?}" method="POST">
+          <div class="row">
+            <div class="col-md-2">
+              <div class="form-group">
+                <label>Tanggal</label>
+                <input type="date" name="tanggal_pengajuan" class="form-control" value="{?=date('Y-m-d')?}" required>
+              </div>
+            </div>
+            <div class="col-md-4">
+              <div class="form-group">
+                <label>Obat</label>
+                <select name="kode_brng" class="form-control" required>
+                  <option value="">- Pilih Obat -</option>
+                  {loop: $items}
+                  <option value="{?=isset_or($value.kode_brng)?}">{?=isset_or($value.kode_brng)?} - {?=isset_or($value.nama_brng)?}</option>
+                  {/loop}
+                </select>
+              </div>
+            </div>
+            <div class="col-md-2">
+              <div class="form-group">
+                <label>Jumlah</label>
+                <input type="number" min="1" name="jumlah" class="form-control" required>
+              </div>
+            </div>
+            <div class="col-md-2">
+              <div class="form-group">
+                <label>Status Persetujuan</label>
+                <select name="status" class="form-control" required>
+                  <option value="Menunggu">Menunggu</option>
+                  <option value="Disetujui">Disetujui</option>
+                  <option value="Ditolak">Ditolak</option>
+                </select>
+              </div>
+            </div>
+            <div class="col-md-2">
+              <div class="form-group" style="margin-top:24px;">
+                <button type="submit" class="btn btn-primary btn-block">Simpan</button>
+              </div>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Catatan</label>
+            <textarea name="catatan" class="form-control" rows="2" placeholder="Catatan pengajuan (opsional)"></textarea>
+          </div>
+        </form>
+
+        <hr>
+
+        <div class="table-responsive">
+          <table class="table table-striped table-bordered dataTables">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Tanggal</th>
+                <th>Kode Obat</th>
+                <th>Nama Obat</th>
+                <th>Jumlah</th>
+                <th>Status</th>
+                <th>Catatan</th>
+                <th>Dibuat Oleh</th>
+              </tr>
+            </thead>
+            <tbody>
+              {if: !empty($list)}
+              {loop: $list}
+              <tr>
+                <td>{?=isset_or($value.id)?}</td>
+                <td>{?=isset_or($value.tanggal_pengajuan)?}</td>
+                <td>{?=isset_or($value.kode_brng)?}</td>
+                <td>{?=isset_or($value.nama_brng)?}</td>
+                <td class="text-right">{?=isset_or($value.jumlah)?}</td>
+                <td>{?=isset_or($value.status)?}</td>
+                <td>{?=isset_or($value.catatan)?}</td>
+                <td>{?=isset_or($value.dibuat_oleh)?}</td>
+              </tr>
+              {/loop}
+              {else}
+              <tr><td colspan="8" class="text-center">Belum ada data pengajuan obat.</td></tr>
+              {/if}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
