@@ -1,0 +1,150 @@
+<div class="row">
+  <div class="col-md-12">
+    <div class="panel panel-default">
+      <div class="panel-heading">
+        <h3 class="panel-title">{?=isset_or($title)?}</h3>
+      </div>
+      <div class="panel-body">
+        <form action="{?=url([ADMIN, 'farmasi', 'savepengajuanobat'])?}" method="POST">
+          <div class="row">
+            <div class="col-md-3">
+              <div class="form-group">
+                <label>No Pengajuan</label>
+                <input type="text" name="no_pengajuan" class="form-control" value="{?=isset_or($no_baru)?}" readonly>
+              </div>
+            </div>
+            <div class="col-md-3">
+              <div class="form-group">
+                <label>Tanggal Pengajuan</label>
+                <input type="date" name="tanggal_pengajuan" class="form-control" value="{?=date('Y-m-d')?}" required>
+              </div>
+            </div>
+            <div class="col-md-6">
+              <div class="form-group">
+                <label>Catatan</label>
+                <input type="text" name="catatan" class="form-control" placeholder="Catatan pengajuan (opsional)">
+              </div>
+            </div>
+          </div>
+
+          <div class="table-responsive">
+            <table class="table table-striped table-bordered" id="pengajuan_items_table">
+              <thead>
+                <tr>
+                  <th style="width:55%">Obat</th>
+                  <th style="width:20%">Jumlah</th>
+                  <th style="width:25%">Aksi</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>
+                    <select name="kode_brng[]" class="form-control" required>
+                      <option value="">- Pilih Obat -</option>
+                      {loop: $items}
+                      <option value="{?=isset_or($value.kode_brng)?}">{?=isset_or($value.kode_brng)?} - {?=isset_or($value.nama_brng)?}</option>
+                      {/loop}
+                    </select>
+                  </td>
+                  <td><input type="number" min="1" name="jumlah[]" class="form-control" required></td>
+                  <td>
+                    <button type="button" class="btn btn-success btn-sm" id="add_row_pengajuan"><i class="fa fa-plus"></i> Tambah Item</button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <button type="submit" class="btn btn-primary">Simpan Pengajuan (Status otomatis: Menunggu)</button>
+        </form>
+
+        <hr>
+
+        <h4>Daftar Nomor Pengajuan</h4>
+        <div class="table-responsive">
+          <table class="table table-striped table-bordered dataTables">
+            <thead>
+              <tr>
+                <th>No Pengajuan</th>
+                <th>Tanggal</th>
+                <th>Total Item</th>
+                <th>Total Jumlah</th>
+                <th>Status</th>
+                <th>Dibuat Oleh</th>
+                <th>Disetujui Oleh</th>
+                <th class="text-right">Aksi</th>
+              </tr>
+            </thead>
+            <tbody>
+              {if: !empty($headers)}
+              {loop: $headers}
+              <tr>
+                <td>{?=isset_or($value.no_pengajuan)?}</td>
+                <td>{?=isset_or($value.tanggal_pengajuan)?}</td>
+                <td class="text-right">{?=isset_or($value.total_item)?}</td>
+                <td class="text-right">{?=isset_or($value.total_jumlah)?}</td>
+                <td>{?=isset_or($value.status)?}</td>
+                <td>{?=isset_or($value.dibuat_oleh)?}</td>
+                <td>{?=isset_or($value.disetujui_oleh)?}</td>
+                <td class="text-right">
+                  <a href="{?=url([ADMIN, 'farmasi', 'pengajuanobat', $value.no_pengajuan])?}" class="btn btn-info btn-xs">Detail</a>
+                  {if: $can_approve && $value.status == 'Menunggu'}
+                  <a href="{?=url([ADMIN, 'farmasi', 'approvepengajuanobat', $value.no_pengajuan])?}" class="btn btn-success btn-xs" data-confirm="Setujui pengajuan ini?">Setujui</a>
+                  {/if}
+                </td>
+              </tr>
+              {/loop}
+              {else}
+              <tr><td colspan="8" class="text-center">Belum ada data pengajuan obat.</td></tr>
+              {/if}
+            </tbody>
+          </table>
+        </div>
+
+        <h4>Detail Pengajuan: {?=isset_or($selected_no, '-')?}</h4>
+        <div class="table-responsive">
+          <table class="table table-striped table-bordered">
+            <thead>
+              <tr>
+                <th>Kode Obat</th>
+                <th>Nama Obat</th>
+                <th class="text-right">Jumlah</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {if: !empty($details)}
+              {loop: $details}
+              <tr>
+                <td>{?=isset_or($value.kode_brng)?}</td>
+                <td>{?=isset_or($value.nama_brng)?}</td>
+                <td class="text-right">{?=isset_or($value.jumlah)?}</td>
+                <td>{?=isset_or($value.status)?}</td>
+              </tr>
+              {/loop}
+              {else}
+              <tr><td colspan="4" class="text-center">Pilih nomor pengajuan untuk melihat detail item.</td></tr>
+              {/if}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+$(function() {
+  $('#add_row_pengajuan').on('click', function() {
+    var row = $('#pengajuan_items_table tbody tr:first').clone();
+    row.find('select').val('');
+    row.find('input').val('');
+    row.find('td:last').html('<button type="button" class="btn btn-danger btn-sm remove_row_pengajuan"><i class="fa fa-trash"></i> Hapus</button>');
+    $('#pengajuan_items_table tbody').append(row);
+  });
+
+  $(document).on('click', '.remove_row_pengajuan', function() {
+    $(this).closest('tr').remove();
+  });
+});
+</script>
