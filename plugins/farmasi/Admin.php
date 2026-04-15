@@ -851,97 +851,294 @@ class Admin extends AdminModule
     /* End Darurat Stok Section */
 
     /* Pengadaan Obat Section */
-    public function getPengajuanObat()
+    public function getPengajuanObat($noPengajuan = '')
     {
         $this->_addHeaderFiles();
         $this->_ensurePengadaanTables();
 
-        $rows = $this->db()->pdo()->query("
-            SELECT po.*, db.nama_brng
-            FROM farmasi_pengajuan_obat po
-            LEFT JOIN databarang db ON db.kode_brng = po.kode_brng
-            ORDER BY po.id DESC
+        $selectedNo = $noPengajuan ?: ($_GET['no_pengajuan'] ?? '');
+        $noBaru = $this->_generateNomorDokumen('PGO', 'farmasi_pengajuan_obat', 'no_pengajuan');
+
+        $headerList = $this->db()->pdo()->query("
+            SELECT
+                no_pengajuan,
+                MIN(tanggal_pengajuan) AS tanggal_pengajuan,
+                MAX(status) AS status,
+                SUM(jumlah) AS total_jumlah,
+                COUNT(*) AS total_item,
+                MAX(dibuat_oleh) AS dibuat_oleh,
+                MAX(disetujui_oleh) AS disetujui_oleh
+            FROM farmasi_pengajuan_obat
+            GROUP BY no_pengajuan
+            ORDER BY no_pengajuan DESC
         ")->fetchAll(\PDO::FETCH_ASSOC);
+
+        if (empty($selectedNo) && !empty($headerList)) {
+            $selectedNo = $headerList[0]['no_pengajuan'];
+        }
+
+        $detailList = [];
+        if (!empty($selectedNo)) {
+            $stmt = $this->db()->pdo()->prepare("
+                SELECT po.*, db.nama_brng
+                FROM farmasi_pengajuan_obat po
+                LEFT JOIN databarang db ON db.kode_brng = po.kode_brng
+                WHERE po.no_pengajuan = :no_pengajuan
+                ORDER BY po.id ASC
+            ");
+            $stmt->execute([':no_pengajuan' => $selectedNo]);
+            $detailList = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+        }
 
         return $this->draw('pengajuanobat.html', [
             'title' => 'Pengajuan Kebutuhan Obat',
+            'no_baru' => $noBaru,
+            'selected_no' => $selectedNo,
             'items' => htmlspecialchars_array($this->db('databarang')->where('status', '1')->toArray()),
-            'list' => htmlspecialchars_array($rows),
+            'headers' => htmlspecialchars_array($headerList),
+            'details' => htmlspecialchars_array($detailList),
+            'can_approve' => $this->_canApprovePengajuan(),
         ]);
     }
 
     public function postSavePengajuanObat()
     {
         $this->_ensurePengadaanTables();
-        if (checkEmptyFields(['tanggal_pengajuan', 'kode_brng', 'jumlah'], $_POST)) {
-            $this->notify('failure', 'Isian pengajuan wajib diisi.');
+
+        $kodeBarang = $_POST['kode_brng'] ?? [];
+        $jumlahList = $_POST['jumlah'] ?? [];
+        if (empty($kodeBarang) || empty($jumlahList)) {
+            $this->notify('failure', 'Minimal satu item obat harus diisi.');
             redirect(url([ADMIN, 'farmasi', 'pengajuanobat']));
         }
 
-        $payload = [
-            'tanggal_pengajuan' => $_POST['tanggal_pengajuan'],
-            'kode_brng' => $_POST['kode_brng'],
-            'jumlah' => (int) $_POST['jumlah'],
-            'status' => $_POST['status'] ?? 'Menunggu',
-            'catatan' => $_POST['catatan'] ?? '',
-            'dibuat_oleh' => $this->core->getUserInfo('fullname', null, true),
-            'created_at' => date('Y-m-d H:i:s'),
-        ];
+        $noPengajuan = $_POST['no_pengajuan'] ?? $this->_generateNomorDokumen('PGO', 'farmasi_pengajuan_obat', 'no_pengajuan');
+        $tanggal = $_POST['tanggal_pengajuan'] ?? date('Y-m-d');
+        $catatan = $_POST['catatan'] ?? '';
 
-        $query = $this->db('farmasi_pengajuan_obat')->save($payload);
-        $this->notify($query ? 'success' : 'failure', $query ? 'Pengajuan obat berhasil disimpan.' : 'Pengajuan obat gagal disimpan.');
-        redirect(url([ADMIN, 'farmasi', 'pengajuanobat']));
+        $saved = 0;
+        foreach ($kodeBarang as $i => $kode) {
+            $kode = trim((string) $kode);
+            $jumlah = (int) ($jumlahList[$i] ?? 0);
+            if (empty($kode) || $jumlah <= 0) {
+                continue;
+            }
+
+            $query = $this->db('farmasi_pengajuan_obat')->save([
+                'no_pengajuan' => $noPengajuan,
+                'tanggal_pengajuan' => $tanggal,
+                'kode_brng' => $kode,
+                'jumlah' => $jumlah,
+                'status' => 'Menunggu',
+                'catatan' => $catatan,
+                'dibuat_oleh' => $this->core->getUserInfo('fullname', null, true),
+                'created_at' => date('Y-m-d H:i:s'),
+            ]);
+
+            if ($query) {
+                $saved++;
+            }
+        }
+
+        $this->notify($saved > 0 ? 'success' : 'failure', $saved > 0 ? 'Pengajuan obat berhasil disimpan.' : 'Pengajuan obat gagal disimpan.');
+        redirect(url([ADMIN, 'farmasi', 'pengajuanobat', $noPengajuan]));
     }
 
-    public function getPemesananObat()
+    public function getApprovePengajuanObat($noPengajuan)
+    {
+        $this->_ensurePengadaanTables();
+
+        if (!$this->_canApprovePengajuan()) {
+            $this->notify('failure', 'Hanya role manajemen/administrator yang dapat menyetujui pengajuan.');
+            redirect(url([ADMIN, 'farmasi', 'pengajuanobat', $noPengajuan]));
+        }
+
+        $query = $this->db('farmasi_pengajuan_obat')
+            ->where('no_pengajuan', $noPengajuan)
+            ->save([
+                'status' => 'Disetujui',
+                'disetujui_oleh' => $this->core->getUserInfo('fullname', null, true),
+                'disetujui_at' => date('Y-m-d H:i:s'),
+            ]);
+
+        $this->notify($query ? 'success' : 'failure', $query ? 'Pengajuan berhasil disetujui.' : 'Pengajuan gagal disetujui.');
+        redirect(url([ADMIN, 'farmasi', 'pengajuanobat', $noPengajuan]));
+    }
+
+    public function getPemesananObat($noPengajuan = '')
     {
         $this->_addHeaderFiles();
         $this->_ensurePengadaanTables();
 
-        $pengajuan = $this->db()->pdo()->query("
-            SELECT po.id, po.tanggal_pengajuan, po.kode_brng, po.jumlah, po.status, db.nama_brng
-            FROM farmasi_pengajuan_obat po
-            LEFT JOIN databarang db ON db.kode_brng = po.kode_brng
-            WHERE po.status = 'Disetujui'
-            ORDER BY po.id DESC
+        $selectedNo = $noPengajuan ?: ($_GET['no_pengajuan'] ?? '');
+
+        $approvedHeaders = $this->db()->pdo()->query("
+            SELECT
+                no_pengajuan,
+                MIN(tanggal_pengajuan) AS tanggal_pengajuan,
+                SUM(jumlah) AS total_jumlah,
+                COUNT(*) AS total_item
+            FROM farmasi_pengajuan_obat
+            WHERE status = 'Disetujui'
+            GROUP BY no_pengajuan
+            ORDER BY no_pengajuan DESC
         ")->fetchAll(\PDO::FETCH_ASSOC);
 
-        $rows = $this->db()->pdo()->query("
-            SELECT pmo.*, po.kode_brng, po.jumlah AS jumlah_pengajuan, db.nama_brng
+        if (empty($selectedNo) && !empty($approvedHeaders)) {
+            $selectedNo = $approvedHeaders[0]['no_pengajuan'];
+        }
+
+        $pengajuanItems = [];
+        if (!empty($selectedNo)) {
+            $stmt = $this->db()->pdo()->prepare("
+                SELECT po.id, po.kode_brng, po.jumlah, db.nama_brng
+                FROM farmasi_pengajuan_obat po
+                LEFT JOIN databarang db ON db.kode_brng = po.kode_brng
+                WHERE po.no_pengajuan = :no_pengajuan
+                AND po.status = 'Disetujui'
+                ORDER BY po.id ASC
+            ");
+            $stmt->execute([':no_pengajuan' => $selectedNo]);
+            $pengajuanItems = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+        }
+
+        $supplierList = $this->db('industrifarmasi')
+            ->where('kode_industri', '!=', '-')
+            ->toArray();
+
+        $list = $this->db()->pdo()->query("
+            SELECT pmo.*, db.nama_brng
             FROM farmasi_pemesanan_obat pmo
-            LEFT JOIN farmasi_pengajuan_obat po ON po.id = pmo.pengajuan_id
-            LEFT JOIN databarang db ON db.kode_brng = po.kode_brng
+            LEFT JOIN databarang db ON db.kode_brng = pmo.kode_brng
             ORDER BY pmo.id DESC
         ")->fetchAll(\PDO::FETCH_ASSOC);
 
         return $this->draw('pemesananobat.html', [
             'title' => 'Pemesanan Obat',
-            'pengajuan' => htmlspecialchars_array($pengajuan),
-            'list' => htmlspecialchars_array($rows),
+            'selected_no' => $selectedNo,
+            'no_baru' => $this->_generateNomorDokumen('PMO', 'farmasi_pemesanan_obat', 'no_pemesanan'),
+            'approved_headers' => htmlspecialchars_array($approvedHeaders),
+            'pengajuan_items' => htmlspecialchars_array($pengajuanItems),
+            'suppliers' => htmlspecialchars_array($supplierList),
+            'list' => htmlspecialchars_array($list),
         ]);
     }
 
     public function postSavePemesananObat()
     {
         $this->_ensurePengadaanTables();
-        if (checkEmptyFields(['pengajuan_id', 'tanggal_pemesanan', 'supplier', 'jumlah_pesan'], $_POST)) {
-            $this->notify('failure', 'Isian pemesanan wajib diisi.');
+
+        $noPengajuan = $_POST['no_pengajuan'] ?? '';
+        $tanggal = $_POST['tanggal_pemesanan'] ?? '';
+        $supplierKode = $_POST['supplier_kode'] ?? [];
+        $jumlahPesan = $_POST['jumlah_pesan'] ?? [];
+
+        if (empty($noPengajuan) || empty($tanggal) || empty($supplierKode)) {
+            $this->notify('failure', 'No pengajuan, tanggal dan supplier wajib diisi.');
+            redirect(url([ADMIN, 'farmasi', 'pemesananobat', $noPengajuan]));
+        }
+
+        $noPemesanan = $_POST['no_pemesanan'] ?? $this->_generateNomorDokumen('PMO', 'farmasi_pemesanan_obat', 'no_pemesanan');
+        $supplierKode = array_values(array_filter(array_map('trim', (array) $supplierKode)));
+        $supplierKodeText = implode(',', $supplierKode);
+
+        $namaSupplier = [];
+        if (!empty($supplierKode)) {
+            $placeholders = implode(',', array_fill(0, count($supplierKode), '?'));
+            $stmtSupplier = $this->db()->pdo()->prepare("SELECT nama_industri FROM industrifarmasi WHERE kode_industri IN ($placeholders)");
+            $stmtSupplier->execute($supplierKode);
+            $namaSupplier = $stmtSupplier->fetchAll(\PDO::FETCH_COLUMN);
+        }
+        $supplierNamaText = implode(', ', $namaSupplier);
+
+        $stmt = $this->db()->pdo()->prepare("
+            SELECT po.id, po.kode_brng, po.jumlah
+            FROM farmasi_pengajuan_obat po
+            WHERE po.no_pengajuan = :no_pengajuan
+            AND po.status = 'Disetujui'
+            ORDER BY po.id ASC
+        ");
+        $stmt->execute([':no_pengajuan' => $noPengajuan]);
+        $approvedItems = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+
+        if (empty($approvedItems)) {
+            $this->notify('failure', 'Data pengajuan disetujui tidak ditemukan.');
+            redirect(url([ADMIN, 'farmasi', 'pemesananobat', $noPengajuan]));
+        }
+
+        $saved = 0;
+        foreach ($approvedItems as $item) {
+            $jumlah = (int) ($jumlahPesan[$item['id']] ?? $item['jumlah']);
+            if ($jumlah <= 0) {
+                continue;
+            }
+
+            $query = $this->db('farmasi_pemesanan_obat')->save([
+                'no_pemesanan' => $noPemesanan,
+                'no_pengajuan' => $noPengajuan,
+                'pengajuan_id' => (int) $item['id'],
+                'kode_brng' => $item['kode_brng'],
+                'tanggal_pemesanan' => $tanggal,
+                'supplier_kode' => $supplierKodeText,
+                'supplier' => $supplierNamaText,
+                'jumlah_pengajuan' => (int) $item['jumlah'],
+                'jumlah_pesan' => $jumlah,
+                'status_pemesanan' => 'Dipesan',
+                'catatan' => $_POST['catatan'] ?? '',
+                'dibuat_oleh' => $this->core->getUserInfo('fullname', null, true),
+                'created_at' => date('Y-m-d H:i:s'),
+            ]);
+
+            if ($query) {
+                $saved++;
+            }
+        }
+
+        $this->notify($saved > 0 ? 'success' : 'failure', $saved > 0 ? 'Pemesanan obat berhasil disimpan.' : 'Pemesanan obat gagal disimpan.');
+        redirect(url([ADMIN, 'farmasi', 'pemesananobat', $noPengajuan]));
+    }
+
+    public function getCetakSpPemesanan($noPemesanan)
+    {
+        $this->_ensurePengadaanTables();
+
+        $stmt = $this->db()->pdo()->prepare("
+            SELECT pmo.*, db.nama_brng
+            FROM farmasi_pemesanan_obat pmo
+            LEFT JOIN databarang db ON db.kode_brng = pmo.kode_brng
+            WHERE pmo.no_pemesanan = :no_pemesanan
+            ORDER BY pmo.id ASC
+        ");
+        $stmt->execute([':no_pemesanan' => $noPemesanan]);
+        $items = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+
+        if (empty($items)) {
+            $this->notify('failure', 'Data surat pemesanan tidak ditemukan.');
             redirect(url([ADMIN, 'farmasi', 'pemesananobat']));
         }
 
-        $query = $this->db('farmasi_pemesanan_obat')->save([
-            'pengajuan_id' => (int) $_POST['pengajuan_id'],
-            'tanggal_pemesanan' => $_POST['tanggal_pemesanan'],
-            'supplier' => $_POST['supplier'],
-            'jumlah_pesan' => (int) $_POST['jumlah_pesan'],
-            'status_pemesanan' => $_POST['status_pemesanan'] ?? 'Dipesan',
-            'catatan' => $_POST['catatan'] ?? '',
-            'dibuat_oleh' => $this->core->getUserInfo('fullname', null, true),
-            'created_at' => date('Y-m-d H:i:s'),
-        ]);
+        $noPengajuan = $items[0]['no_pengajuan'] ?? '';
+        $approval = $this->db()->pdo()->prepare("
+            SELECT disetujui_oleh, disetujui_at
+            FROM farmasi_pengajuan_obat
+            WHERE no_pengajuan = :no_pengajuan
+            AND status = 'Disetujui'
+            ORDER BY id ASC LIMIT 1
+        ");
+        $approval->execute([':no_pengajuan' => $noPengajuan]);
+        $approval = $approval->fetch(\PDO::FETCH_ASSOC) ?: ['disetujui_oleh' => '-', 'disetujui_at' => null];
 
-        $this->notify($query ? 'success' : 'failure', $query ? 'Pemesanan obat berhasil disimpan.' : 'Pemesanan obat gagal disimpan.');
-        redirect(url([ADMIN, 'farmasi', 'pemesananobat']));
+        echo $this->draw('cetaksp.html', [
+            'settings' => $this->settings->toArray(),
+            'no_pemesanan' => $noPemesanan,
+            'items' => htmlspecialchars_array($items),
+            'dibuat_oleh' => $items[0]['dibuat_oleh'] ?? '-',
+            'disetujui_oleh' => $approval['disetujui_oleh'] ?? '-',
+            'tanggal_pemesanan' => $items[0]['tanggal_pemesanan'] ?? date('Y-m-d'),
+            'supplier' => $items[0]['supplier'] ?? '-',
+            'no_pengajuan' => $noPengajuan,
+        ]);
+        exit();
     }
 
     public function getPenerimaanObat()
@@ -950,20 +1147,18 @@ class Admin extends AdminModule
         $this->_ensurePengadaanTables();
 
         $pemesanan = $this->db()->pdo()->query("
-            SELECT pmo.id, pmo.tanggal_pemesanan, pmo.jumlah_pesan, pmo.supplier, po.kode_brng, db.nama_brng
+            SELECT pmo.id, pmo.no_pemesanan, pmo.tanggal_pemesanan, pmo.jumlah_pesan, pmo.supplier, pmo.kode_brng, db.nama_brng
             FROM farmasi_pemesanan_obat pmo
-            LEFT JOIN farmasi_pengajuan_obat po ON po.id = pmo.pengajuan_id
-            LEFT JOIN databarang db ON db.kode_brng = po.kode_brng
+            LEFT JOIN databarang db ON db.kode_brng = pmo.kode_brng
             WHERE pmo.status_pemesanan IN ('Dipesan', 'Selesai')
             ORDER BY pmo.id DESC
         ")->fetchAll(\PDO::FETCH_ASSOC);
 
         $rows = $this->db()->pdo()->query("
-            SELECT pto.*, pmo.supplier, pmo.jumlah_pesan, po.kode_brng, db.nama_brng
+            SELECT pto.*, pmo.no_pemesanan, pmo.supplier, pmo.jumlah_pesan, pmo.kode_brng, db.nama_brng
             FROM farmasi_penerimaan_obat pto
             LEFT JOIN farmasi_pemesanan_obat pmo ON pmo.id = pto.pemesanan_id
-            LEFT JOIN farmasi_pengajuan_obat po ON po.id = pmo.pengajuan_id
-            LEFT JOIN databarang db ON db.kode_brng = po.kode_brng
+            LEFT JOIN databarang db ON db.kode_brng = pmo.kode_brng
             ORDER BY pto.id DESC
         ")->fetchAll(\PDO::FETCH_ASSOC);
 
@@ -983,10 +1178,9 @@ class Admin extends AdminModule
         }
 
         $pemesanan = $this->db()->pdo()->prepare("
-            SELECT pmo.*, po.kode_brng
-            FROM farmasi_pemesanan_obat pmo
-            LEFT JOIN farmasi_pengajuan_obat po ON po.id = pmo.pengajuan_id
-            WHERE pmo.id = :id
+            SELECT *
+            FROM farmasi_pemesanan_obat
+            WHERE id = :id
             LIMIT 1
         ");
         $pemesanan->execute([':id' => (int) $_POST['pemesanan_id']]);
@@ -1067,32 +1261,82 @@ class Admin extends AdminModule
         redirect(url([ADMIN, 'farmasi', 'penerimaanobat']));
     }
 
+    private function _canApprovePengajuan()
+    {
+        $role = strtolower((string) $this->core->getUserInfo('role', null, true));
+        return in_array($role, ['admin', 'administrator', 'manajemen', 'management'], true);
+    }
+
+    private function _generateNomorDokumen($prefix, $table, $field)
+    {
+        $datePart = date('Ymd');
+        $start = $prefix . '-' . $datePart . '-';
+
+        $stmt = $this->db()->pdo()->prepare("SELECT $field FROM $table WHERE $field LIKE :start ORDER BY id DESC LIMIT 1");
+        $stmt->execute([':start' => $start . '%']);
+        $last = $stmt->fetch(\PDO::FETCH_ASSOC);
+
+        $next = 1;
+        if (!empty($last[$field])) {
+            $parts = explode('-', $last[$field]);
+            $next = (int) ($parts[2] ?? 0) + 1;
+        }
+
+        return $start . str_pad((string) $next, 4, '0', STR_PAD_LEFT);
+    }
+
+    private function _addColumnIfMissing($table, $column, $definition)
+    {
+        $stmt = $this->db()->pdo()->prepare("SHOW COLUMNS FROM `$table` LIKE :column");
+        $stmt->execute([':column' => $column]);
+        $exists = $stmt->fetch(\PDO::FETCH_ASSOC);
+
+        if (empty($exists)) {
+            $this->db()->pdo()->exec("ALTER TABLE `$table` ADD COLUMN `$column` $definition");
+        }
+    }
+
     private function _ensurePengadaanTables()
     {
         $this->db()->pdo()->exec("CREATE TABLE IF NOT EXISTS `farmasi_pengajuan_obat` (
-          `id` INTEGER PRIMARY KEY AUTO_INCREMENT,
+          `id` int(11) NOT NULL AUTO_INCREMENT,
+          `no_pengajuan` varchar(30) NOT NULL,
           `tanggal_pengajuan` date NOT NULL,
           `kode_brng` varchar(15) NOT NULL,
           `jumlah` int(11) NOT NULL DEFAULT 0,
           `status` varchar(20) NOT NULL DEFAULT 'Menunggu',
           `catatan` text,
           `dibuat_oleh` varchar(100) DEFAULT '-',
-          `created_at` datetime NOT NULL
-        )");
+          `disetujui_oleh` varchar(100) DEFAULT NULL,
+          `disetujui_at` datetime DEFAULT NULL,
+          `created_at` datetime NOT NULL,
+          PRIMARY KEY (`id`),
+          KEY `idx_no_pengajuan` (`no_pengajuan`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8");
+
         $this->db()->pdo()->exec("CREATE TABLE IF NOT EXISTS `farmasi_pemesanan_obat` (
-          `id` INTEGER PRIMARY KEY AUTO_INCREMENT,
+          `id` int(11) NOT NULL AUTO_INCREMENT,
+          `no_pemesanan` varchar(30) NOT NULL,
+          `no_pengajuan` varchar(30) NOT NULL,
           `pengajuan_id` int(11) NOT NULL,
+          `kode_brng` varchar(15) NOT NULL,
           `tanggal_pemesanan` date NOT NULL,
-          `supplier` varchar(150) NOT NULL,
+          `supplier_kode` text,
+          `supplier` varchar(255) NOT NULL,
+          `jumlah_pengajuan` int(11) NOT NULL DEFAULT 0,
           `jumlah_pesan` int(11) NOT NULL DEFAULT 0,
           `status_pemesanan` varchar(20) NOT NULL DEFAULT 'Draft',
           `catatan` text,
           `dibuat_oleh` varchar(100) DEFAULT '-',
           `created_at` datetime NOT NULL,
-          CONSTRAINT `fk_farmasi_pemesanan_pengajuan` FOREIGN KEY (`pengajuan_id`) REFERENCES `farmasi_pengajuan_obat`(`id`) ON DELETE CASCADE ON UPDATE CASCADE
-        )");
+          PRIMARY KEY (`id`),
+          KEY `idx_no_pemesanan` (`no_pemesanan`),
+          KEY `idx_no_pengajuan_pemesanan` (`no_pengajuan`),
+          KEY `idx_pengajuan_id` (`pengajuan_id`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8");
+
         $this->db()->pdo()->exec("CREATE TABLE IF NOT EXISTS `farmasi_penerimaan_obat` (
-          `id` INTEGER PRIMARY KEY AUTO_INCREMENT,
+          `id` int(11) NOT NULL AUTO_INCREMENT,
           `pemesanan_id` int(11) NOT NULL,
           `tanggal_penerimaan` date NOT NULL,
           `jumlah_terima` int(11) NOT NULL DEFAULT 0,
@@ -1102,8 +1346,19 @@ class Admin extends AdminModule
           `catatan` text,
           `dibuat_oleh` varchar(100) DEFAULT '-',
           `created_at` datetime NOT NULL,
-          CONSTRAINT `fk_farmasi_penerimaan_pemesanan` FOREIGN KEY (`pemesanan_id`) REFERENCES `farmasi_pemesanan_obat`(`id`) ON DELETE CASCADE ON UPDATE CASCADE
-        )");
+          PRIMARY KEY (`id`),
+          KEY `idx_pemesanan_id` (`pemesanan_id`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8");
+
+        $this->_addColumnIfMissing('farmasi_pengajuan_obat', 'no_pengajuan', "varchar(30) NOT NULL DEFAULT '-'");
+        $this->_addColumnIfMissing('farmasi_pengajuan_obat', 'disetujui_oleh', "varchar(100) DEFAULT NULL");
+        $this->_addColumnIfMissing('farmasi_pengajuan_obat', 'disetujui_at', "datetime DEFAULT NULL");
+
+        $this->_addColumnIfMissing('farmasi_pemesanan_obat', 'no_pemesanan', "varchar(30) NOT NULL DEFAULT '-'");
+        $this->_addColumnIfMissing('farmasi_pemesanan_obat', 'no_pengajuan', "varchar(30) NOT NULL DEFAULT '-'");
+        $this->_addColumnIfMissing('farmasi_pemesanan_obat', 'kode_brng', "varchar(15) NOT NULL DEFAULT '-'");
+        $this->_addColumnIfMissing('farmasi_pemesanan_obat', 'supplier_kode', "text DEFAULT NULL");
+        $this->_addColumnIfMissing('farmasi_pemesanan_obat', 'jumlah_pengajuan', "int(11) NOT NULL DEFAULT 0");
     }
     /* End Pengadaan Obat Section */
 

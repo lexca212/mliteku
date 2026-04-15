@@ -9,12 +9,12 @@
           <div class="row">
             <div class="col-md-4">
               <div class="form-group">
-                <label>Pemesanan Obat</label>
+                <label>Item Pemesanan Obat</label>
                 <select name="pemesanan_id" class="form-control" required>
                   <option value="">- Pilih Pemesanan -</option>
                   {loop: $pemesanan}
                   <option value="{?=isset_or($value.id)?}">
-                    #{?=isset_or($value.id)?} | {?=isset_or($value.nama_brng)?} | Supplier: {?=isset_or($value.supplier)?}
+                    {?=isset_or($value.no_pemesanan)?} | {?=isset_or($value.nama_brng)?} | Qty Pesan: {?=isset_or($value.jumlah_pesan)?}
                   </option>
                   {/loop}
                 </select>
@@ -77,7 +77,7 @@
             <thead>
               <tr>
                 <th>ID Terima</th>
-                <th>ID Pesan</th>
+                <th>No Pemesanan</th>
                 <th>Tanggal</th>
                 <th>Obat</th>
                 <th>Qty Terima</th>
@@ -92,7 +92,7 @@
               {loop: $list}
               <tr>
                 <td>{?=isset_or($value.id)?}</td>
-                <td>{?=isset_or($value.pemesanan_id)?}</td>
+                <td>{?=isset_or($value.no_pemesanan)?}</td>
                 <td>{?=isset_or($value.tanggal_penerimaan)?}</td>
                 <td>{?=isset_or($value.kode_brng)?} - {?=isset_or($value.nama_brng)?}</td>
                 <td class="text-right">{?=isset_or($value.jumlah_terima)?}</td>

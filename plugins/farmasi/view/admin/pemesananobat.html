@@ -5,96 +5,118 @@
         <h3 class="panel-title">{?=isset_or($title)?}</h3>
       </div>
       <div class="panel-body">
+        <form action="{?=url([ADMIN, 'farmasi', 'pemesananobat'])?}" method="GET" class="form-inline" style="margin-bottom: 15px;">
+          <div class="form-group">
+            <label>Pilih No Pengajuan Disetujui</label>
+            <select name="no_pengajuan" class="form-control" onchange="this.form.submit()">
+              <option value="">- Pilih -</option>
+              {loop: $approved_headers}
+              <option value="{?=isset_or($value.no_pengajuan)?}" {if: $selected_no == $value.no_pengajuan}selected{/if}>
+                {?=isset_or($value.no_pengajuan)?} (Item: {?=isset_or($value.total_item)?})
+              </option>
+              {/loop}
+            </select>
+          </div>
+        </form>
+
         <form action="{?=url([ADMIN, 'farmasi', 'savepemesananobat'])?}" method="POST">
+          <input type="hidden" name="no_pengajuan" value="{?=isset_or($selected_no)?}">
           <div class="row">
-            <div class="col-md-4">
+            <div class="col-md-3">
               <div class="form-group">
-                <label>Pengajuan Disetujui</label>
-                <select name="pengajuan_id" class="form-control" required>
-                  <option value="">- Pilih Pengajuan -</option>
-                  {loop: $pengajuan}
-                  <option value="{?=isset_or($value.id)?}">
-                    #{?=isset_or($value.id)?} | {?=isset_or($value.nama_brng)?} | Qty: {?=isset_or($value.jumlah)?}
-                  </option>
-                  {/loop}
-                </select>
-              </div>
-            </div>
-            <div class="col-md-2">
-              <div class="form-group">
-                <label>Tanggal Pesan</label>
-                <input type="date" name="tanggal_pemesanan" class="form-control" value="{?=date('Y-m-d')?}" required>
+                <label>No Pemesanan</label>
+                <input type="text" name="no_pemesanan" class="form-control" value="{?=isset_or($no_baru)?}" readonly>
               </div>
             </div>
             <div class="col-md-3">
               <div class="form-group">
-                <label>Supplier</label>
-                <input type="text" name="supplier" class="form-control" placeholder="Nama supplier" required>
+                <label>Tanggal Pemesanan</label>
+                <input type="date" name="tanggal_pemesanan" class="form-control" value="{?=date('Y-m-d')?}" required>
               </div>
             </div>
-            <div class="col-md-1">
+            <div class="col-md-6">
               <div class="form-group">
-                <label>Jumlah</label>
-                <input type="number" min="1" name="jumlah_pesan" class="form-control" required>
-              </div>
-            </div>
-            <div class="col-md-2">
-              <div class="form-group">
-                <label>Status</label>
-                <select name="status_pemesanan" class="form-control" required>
-                  <option value="Dipesan">Dipesan</option>
-                  <option value="Draft">Draft</option>
-                  <option value="Selesai">Selesai</option>
-                  <option value="Dibatalkan">Dibatalkan</option>
+                <label>Supplier (bisa lebih dari satu)</label>
+                <select name="supplier_kode[]" class="form-control" multiple required style="height: 100px;">
+                  {loop: $suppliers}
+                  <option value="{?=isset_or($value.kode_industri)?}">{?=isset_or($value.nama_industri)?}</option>
+                  {/loop}
                 </select>
               </div>
             </div>
           </div>
-          <div class="row">
-            <div class="col-md-10">
-              <div class="form-group">
-                <label>Catatan</label>
-                <textarea name="catatan" class="form-control" rows="2" placeholder="Catatan pemesanan (opsional)"></textarea>
-              </div>
-            </div>
-            <div class="col-md-2">
-              <div class="form-group" style="margin-top:24px;">
-                <button type="submit" class="btn btn-primary btn-block">Simpan</button>
-              </div>
-            </div>
+
+          <div class="form-group">
+            <label>Catatan</label>
+            <input type="text" name="catatan" class="form-control" placeholder="Catatan pemesanan" style="width:100%;">
           </div>
+
+          <h4>Detail Item Pengajuan (jumlah pesan bisa diubah)</h4>
+          <div class="table-responsive">
+            <table class="table table-striped table-bordered">
+              <thead>
+                <tr>
+                  <th>Kode</th>
+                  <th>Nama Obat</th>
+                  <th class="text-right">Qty Pengajuan</th>
+                  <th class="text-right">Qty Pesan</th>
+                </tr>
+              </thead>
+              <tbody>
+                {if: !empty($pengajuan_items)}
+                {loop: $pengajuan_items}
+                <tr>
+                  <td>{?=isset_or($value.kode_brng)?}</td>
+                  <td>{?=isset_or($value.nama_brng)?}</td>
+                  <td class="text-right">{?=isset_or($value.jumlah)?}</td>
+                  <td>
+                    <input type="number" min="0" name="jumlah_pesan[{?=isset_or($value.id)?}]" class="form-control text-right" value="{?=isset_or($value.jumlah)?}">
+                  </td>
+                </tr>
+                {/loop}
+                {else}
+                <tr><td colspan="4" class="text-center">Pilih nomor pengajuan disetujui terlebih dahulu.</td></tr>
+                {/if}
+              </tbody>
+            </table>
+          </div>
+
+          <button type="submit" class="btn btn-primary" {if: empty($pengajuan_items)}disabled{/if}>Simpan Pemesanan</button>
         </form>
 
         <hr>
 
+        <h4>Riwayat Pemesanan</h4>
         <div class="table-responsive">
           <table class="table table-striped table-bordered dataTables">
             <thead>
               <tr>
-                <th>ID Pesanan</th>
-                <th>ID Pengajuan</th>
+                <th>No Pemesanan</th>
+                <th>No Pengajuan</th>
                 <th>Tanggal</th>
                 <th>Obat</th>
                 <th>Supplier</th>
-                <th>Qty Pengajuan</th>
-                <th>Qty Pesan</th>
+                <th class="text-right">Qty Pengajuan</th>
+                <th class="text-right">Qty Pesan</th>
                 <th>Status</th>
-                <th>Dibuat Oleh</th>
+                <th class="text-right">Aksi</th>
               </tr>
             </thead>
             <tbody>
               {if: !empty($list)}
               {loop: $list}
               <tr>
-                <td>{?=isset_or($value.id)?}</td>
-                <td>{?=isset_or($value.pengajuan_id)?}</td>
+                <td>{?=isset_or($value.no_pemesanan)?}</td>
+                <td>{?=isset_or($value.no_pengajuan)?}</td>
                 <td>{?=isset_or($value.tanggal_pemesanan)?}</td>
                 <td>{?=isset_or($value.kode_brng)?} - {?=isset_or($value.nama_brng)?}</td>
                 <td>{?=isset_or($value.supplier)?}</td>
                 <td class="text-right">{?=isset_or($value.jumlah_pengajuan)?}</td>
                 <td class="text-right">{?=isset_or($value.jumlah_pesan)?}</td>
                 <td>{?=isset_or($value.status_pemesanan)?}</td>
-                <td>{?=isset_or($value.dibuat_oleh)?}</td>
+                <td class="text-right">
+                  <a href="{?=url([ADMIN, 'farmasi', 'cetaksppemesanan', $value.no_pemesanan])?}" class="btn btn-success btn-xs" target="_blank">Cetak SP</a>
+                </td>
               </tr>
               {/loop}
               {else}
