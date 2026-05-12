@@ -1,0 +1,130 @@
+<div class="row">
+  <div class="col-md-12">
+    <div class="panel panel-default">
+      <div class="panel-heading">
+        <h3 class="panel-title">Ringkasan Catatan Keuangan</h3>
+      </div>
+      <div class="panel-body">
+        <form method="GET" action="{?=url([ADMIN, 'catatan_keuangan', 'manage'])?}" class="form-inline" style="margin-bottom:15px;">
+          <div class="form-group">
+            <label>Dari</label>
+            <input type="date" name="start" class="form-control" value="{?=isset_or($tanggal.start)?}">
+          </div>
+          <div class="form-group">
+            <label>Sampai</label>
+            <input type="date" name="end" class="form-control" value="{?=isset_or($tanggal.end)?}">
+          </div>
+          <button type="submit" class="btn btn-primary">Tampilkan</button>
+        </form>
+
+        <div class="row">
+          <div class="col-md-4">
+            <div class="panel panel-success">
+              <div class="panel-heading">Total Pemasukan</div>
+              <div class="panel-body"><h3>Rp {?=number_format($pemasukan.total_semua, 0, ',', '.')?}</h3></div>
+            </div>
+          </div>
+          <div class="col-md-4">
+            <div class="panel panel-danger">
+              <div class="panel-heading">Total Pengeluaran</div>
+              <div class="panel-body"><h3>Rp {?=number_format($pengeluaran.total, 0, ',', '.')?}</h3></div>
+            </div>
+          </div>
+          <div class="col-md-4">
+            <div class="panel panel-info">
+              <div class="panel-heading">Saldo Periode</div>
+              <div class="panel-body"><h3>Rp {?=number_format($saldo, 0, ',', '.')?}</h3></div>
+            </div>
+          </div>
+        </div>
+
+        <h4>Pemasukan Berdasarkan Komponen Tarif</h4>
+        <div class="table-responsive">
+          <table class="table table-striped table-bordered dataTables">
+            <thead>
+              <tr>
+                <th>Sumber</th>
+                <th class="text-right">Transaksi</th>
+                <th class="text-right">Material</th>
+                <th class="text-right">BHP</th>
+                <th class="text-right">Jasa Dokter</th>
+                <th class="text-right">Jasa Perawat</th>
+                <th class="text-right">KSO</th>
+                <th class="text-right">Manajemen</th>
+                <th class="text-right">Obat</th>
+                <th class="text-right">Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loop: $pemasukan.list}
+              <tr>
+                <td>{?=isset_or($value.sumber)?}</td>
+                <td class="text-right">{?=number_format($value.transaksi, 0, ',', '.')?}</td>
+                <td class="text-right">{?=number_format($value.material, 0, ',', '.')?}</td>
+                <td class="text-right">{?=number_format($value.bhp, 0, ',', '.')?}</td>
+                <td class="text-right">{?=number_format($value.jasa_dokter, 0, ',', '.')?}</td>
+                <td class="text-right">{?=number_format($value.jasa_perawat, 0, ',', '.')?}</td>
+                <td class="text-right">{?=number_format($value.kso, 0, ',', '.')?}</td>
+                <td class="text-right">{?=number_format($value.manajemen, 0, ',', '.')?}</td>
+                <td class="text-right">{?=number_format($value.obat, 0, ',', '.')?}</td>
+                <td class="text-right"><b>{?=number_format($value.total, 0, ',', '.')?}</b></td>
+              </tr>
+              {/loop}
+            </tbody>
+            <tfoot>
+              <tr>
+                <th>Total</th>
+                <th class="text-right">{?=number_format($pemasukan.total.transaksi, 0, ',', '.')?}</th>
+                <th class="text-right">{?=number_format($pemasukan.total.material, 0, ',', '.')?}</th>
+                <th class="text-right">{?=number_format($pemasukan.total.bhp, 0, ',', '.')?}</th>
+                <th class="text-right">{?=number_format($pemasukan.total.jasa_dokter, 0, ',', '.')?}</th>
+                <th class="text-right">{?=number_format($pemasukan.total.jasa_perawat, 0, ',', '.')?}</th>
+                <th class="text-right">{?=number_format($pemasukan.total.kso, 0, ',', '.')?}</th>
+                <th class="text-right">{?=number_format($pemasukan.total.manajemen, 0, ',', '.')?}</th>
+                <th class="text-right">{?=number_format($pemasukan.total.obat, 0, ',', '.')?}</th>
+                <th class="text-right">{?=number_format($pemasukan.total.total_semua, 0, ',', '.')?}</th>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+
+        <h4>Pengeluaran Berdasarkan Kategori</h4>
+        <div class="table-responsive">
+          <table class="table table-striped table-bordered">
+            <thead>
+              <tr>
+                <th>Kategori</th>
+                <th class="text-right">Transaksi</th>
+                <th class="text-right">Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {if: !empty($pengeluaran.list)}
+              {loop: $pengeluaran.list}
+              <tr>
+                <td>{?=isset_or($value.kategori)?}</td>
+                <td class="text-right">{?=number_format($value.transaksi, 0, ',', '.')?}</td>
+                <td class="text-right">{?=number_format($value.total, 0, ',', '.')?}</td>
+              </tr>
+              {/loop}
+              {else}
+              <tr><td colspan="3" class="text-center">Belum ada pengeluaran pada periode ini.</td></tr>
+              {/if}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+$(function(){
+  $('.dataTables').DataTable({
+    paging: false,
+    searching: false,
+    info: false,
+    scrollX: true
+  });
+});
+</script>
