@@ -29,6 +29,8 @@ class Admin extends AdminModule
             'pemasukan' => htmlspecialchars_array($pemasukan),
             'pengeluaran' => htmlspecialchars_array($pengeluaran),
             'saldo' => $pemasukan['total_semua'] - $pengeluaran['total'],
+            'kategori' => $this->_kategoriPengeluaran(),
+            'token' => $this->_adminToken(),
         ]);
     }
 
@@ -43,6 +45,7 @@ class Admin extends AdminModule
         return $this->draw('pemasukan.html', [
             'tanggal' => htmlspecialchars_array($tanggal),
             'pemasukan' => htmlspecialchars_array($pemasukan),
+            'token' => $this->_adminToken(),
         ]);
     }
 
@@ -68,6 +71,7 @@ class Admin extends AdminModule
             'pengeluaran' => htmlspecialchars_array($pengeluaran),
             'list' => htmlspecialchars_array($list),
             'kategori' => $this->_kategoriPengeluaran(),
+            'token' => $this->_adminToken(),
         ]);
     }
 
@@ -75,9 +79,11 @@ class Admin extends AdminModule
     {
         $this->_ensureTables();
 
+        $redirect = isset($_POST['redirect']) && $_POST['redirect'] == 'manage' ? 'manage' : 'pengeluaran';
+
         if (checkEmptyFields(['tanggal', 'kategori', 'jumlah'], $_POST)) {
             $this->notify('failure', 'Tanggal, kategori, dan jumlah wajib diisi.');
-            redirect(url([ADMIN, 'catatan_keuangan', 'pengeluaran']));
+            redirect(url([ADMIN, 'catatan_keuangan', $redirect]));
         }
 
         $query = $this->db('catatan_keuangan_pengeluaran')->save([
@@ -90,7 +96,7 @@ class Admin extends AdminModule
         ]);
 
         $this->notify($query ? 'success' : 'failure', $query ? 'Pengeluaran berhasil disimpan.' : 'Pengeluaran gagal disimpan.');
-        redirect(url([ADMIN, 'catatan_keuangan', 'pengeluaran']));
+        redirect(url([ADMIN, 'catatan_keuangan', $redirect]));
     }
 
     public function getDeletePengeluaran($id)
@@ -225,6 +231,11 @@ class Admin extends AdminModule
             'list' => $rows,
             'total' => $total,
         ];
+    }
+
+    private function _adminToken()
+    {
+        return isset_or($_SESSION['token'], '');
     }
 
     private function _getDateRange()
