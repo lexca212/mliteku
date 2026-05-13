@@ -14,6 +14,7 @@
             <label>Sampai</label>
             <input type="date" name="end" class="form-control" value="{?=isset_or($tanggal.end)?}">
           </div>
+          <input type="hidden" name="t" value="{?=isset_or($token)?}">
           <button type="submit" class="btn btn-primary">Tampilkan</button>
         </form>
 
