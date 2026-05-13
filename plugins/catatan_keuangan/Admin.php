@@ -29,6 +29,7 @@ class Admin extends AdminModule
             'pemasukan' => htmlspecialchars_array($pemasukan),
             'pengeluaran' => htmlspecialchars_array($pengeluaran),
             'saldo' => $pemasukan['total_semua'] - $pengeluaran['total'],
+            'token' => $this->_adminToken(),
         ]);
     }
 
@@ -43,6 +44,7 @@ class Admin extends AdminModule
         return $this->draw('pemasukan.html', [
             'tanggal' => htmlspecialchars_array($tanggal),
             'pemasukan' => htmlspecialchars_array($pemasukan),
+            'token' => $this->_adminToken(),
         ]);
     }
 
@@ -68,6 +70,7 @@ class Admin extends AdminModule
             'pengeluaran' => htmlspecialchars_array($pengeluaran),
             'list' => htmlspecialchars_array($list),
             'kategori' => $this->_kategoriPengeluaran(),
+            'token' => $this->_adminToken(),
         ]);
     }
 
@@ -225,6 +228,11 @@ class Admin extends AdminModule
             'list' => $rows,
             'total' => $total,
         ];
+    }
+
+    private function _adminToken()
+    {
+        return isset_or($_SESSION['token'], '');
     }
 
     private function _getDateRange()
