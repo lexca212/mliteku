@@ -46,6 +46,7 @@
         <hr>
 
         <form method="GET" action="{?=url([ADMIN, 'catatan_keuangan', 'pengeluaran'])?}" class="form-inline" style="margin-bottom:15px;">
+          <input type="hidden" name="t" value="{?=$_SESSION['token']?}">
           <div class="form-group">
             <label>Dari</label>
             <input type="date" name="start" class="form-control" value="{?=isset_or($tanggal.start)?}">
